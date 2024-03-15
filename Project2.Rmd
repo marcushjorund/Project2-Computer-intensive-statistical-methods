@@ -3,17 +3,189 @@ title: "Project 2"
 author: "Marcus Hjørund & Gard Gravdal"
 date: "`r Sys.Date()`"
 output:
-  pdf_document: default
-  html_document: default
+  bookdown::pdf_document2: default
+  bookdown::html_document2: default
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
 
 # Problem 1
 
 In this problem we will look at a portion from the Tokyo rainfall dataset, which contains daily rainfall from 1951 to 1989. We consider a response to be whether the amount of rainfall exceeded 1mm over the given time period:
+
 \begin{equation}
-y_t|x_t \sim \text{Bin}(n_t, \pi (x_t)), \; \pi (x_t) = \frac{\exp (x_t)}{1 + \exp (x_t)} = \frac{1}{1 + \exp (-x_t)},
+y_t|x_t \sim \text{Bin}(n_t, \pi (x_t)), \; \pi (x_t) = \frac{\exp (x_t)}{1 + \exp (x_t)} = \frac{1}{1 + \exp (-x_t)},(\#eq:y-t-x-t) 
 \end{equation}
+
+for $n_t$ being $10$ for $t = 60$ (Feburary 29th) and 39 for all other days. $\pi (x_t)$ is the probability of rainfall exceeding 1mm of days $t = 1,\ldots , T$ and $T = 366$. Note that $x_t$ is the logit probability of exceedence and can be obtained from $\pi (x_t)$ via $x_t = \text{log}(\pi (x_t)/(1-\pi (x_t)))$. We assume conditional independence among the $y_t | x_t$ for all $t = 1, \ldots , 366$. 
+
+## a)
+
+```{r, include = TRUE, echo = FALSE}
+setwd("C:/Users/marcu/OneDrive/Dokumenter/8. semester/Beregningskrevende statistiske metoder/Project2Beregningskrevende")
+load("~/8. semester/Beregningskrevende statistiske metoder/Project2Beregningskrevende/rain.rda")
+#rain$day is t
+#rain$n.years n_t
+#rain$n.rain y_t
+library(ggplot2)
+```
+
+```{r tokyo-rain,fig.cap = 'Tokyo rain data', fig.dim = c(5,3),include = TRUE, echo = FALSE} 
+rain_data <- data.frame(t = rain$day, n_t = rain$n.years, y_t = rain$n.rain)
+ggplot(data = rain_data, aes(x = t, y = y_t)) +
+  geom_line() + 
+  labs(y = expression(paste(y[t]))) + 
+  theme_bw()
+# pi = rain_data$y_t/rain_data$n_t
+# plot(pi, type = "l")
+```
+
+As we can see in Figure \@ref(fig:tokyo-rain) the rain in Tokyo seems to show seasonal trend. There are few occurences of rain more than 1mm in the period December-January, the peak of rainfall is in June-July, with a following drier period in August-September. 
+
+## b)
+
+Next we want to obtain an expression for the likelihood of $y_t$ depending on the parameters $\pi (x_t)$ for $t = 1, \ldots , 366$. This gives the likeihood for the data $\boldsymbol{y}$ given the probabilities $\pi(\boldsymbol{x})$, where we will later update $\boldsymbol{x}$ using our a MCMC algorithm. Since we assume conditional intependence for $y_t|x_t$ we can write the likehood, using the expression for $\pi (x_t)$ given in Equation \@ref(eq:y-t-x-t):
+
+\begin{align}
+L(\pi (\boldsymbol{x}) |\boldsymbol{y}) &= \prod _{t = 1}^T {n_t \choose y_t} \left(\frac{\exp (x_t)}{1+\exp (x_t)}\right)^{y_t}\left(1-\frac{\exp (x_t)}{1+\exp (x_t)}\right) ^{n_t-y_t} \nonumber \\
+ &= \prod _{t = 1}^T {n_t \choose y_t} \left(\frac{\exp (x_t)}{1+\exp (x_t)}\right)^{y_t}\left(\frac{1}{1+\exp (x_t)}\right) ^{n_t-y_t} \nonumber \\
+ &= \prod _{t = 1}^T {n_t \choose y_t} \frac{\exp (x_t y_t)}{(1 + \exp (x_t))^{n_t}}
+\end{align}
+
+## c)
+
+Now we want to apply a Bayesian hierarchical model to the dataset, where we use a random walk of order 1 (RW(1)) to model the trend on a logit scale,
+\begin{equation*}
+x_t = x_{t-1} + u_t ,
+\end{equation*}
+for $u_t \overset{iid}{\sim}\mathcal{N}(0, \sigma _u^2)$ so that,
+\begin{equation}
+p(\boldsymbol{x}|\sigma _u^2) \propto \prod_{t = 2}^T \frac{1}{\sigma _u}\exp \left\{-\frac{1}{2\sigma _u^2}(x_t - x_{t-1})^2\right\}.
+(\#eq:x-likli)
+\end{equation}
+
+Then we place a inverse gamma prior on $\sigma _u^2$ such that, 
+
+\begin{equation*}
+p(\sigma _u^2) = \frac{\beta ^{\alpha}}{\Gamma (\alpha)}(1/\sigma _u^2)^{\alpha +1} \exp (-\beta /\sigma _u^2)
+\end{equation*}
+for shape and scale $\alpha$ and $\beta$. We let $\boldsymbol{y} = (y_1, y_2, \ldots ,y_T)^T$, $\boldsymbol{x} = (x_1, x_2 , \ldots , x_T)^T$ and $\boldsymbol{\pi} = (\pi (x_1), \pi (x_2), \ldots , \pi (x_T))^T$.
+
+
+Now we will derive the posteriori distribution for $\sigma _u^2|\boldsymbol{x}$, which is used in Gibbs sampling in the hybrid sampler in Section 1.6. If we draw a directed acyclical graph for the hierarchical Bayesian model, we see that $\boldsymbol{y}$ is independent of $\sigma _u^2$, as all information from $\boldsymbol{y}$ is stored in $\boldsymbol{x}$. From Bayes theorem we know that 
+\begin{equation*}
+p(\sigma _u^2|\boldsymbol{y}, \boldsymbol{x}) \propto p(\sigma _u^2) p(\boldsymbol{x}|\sigma _u^2).
+\end{equation*}
+We then have that 
+
+\begin{align}
+p(\sigma _u^2|\boldsymbol{x}, \boldsymbol{y}) &\propto \frac{\beta ^{\alpha}}{\Gamma (\alpha)}(1/\sigma _u^2)^{\alpha +1} \exp (-\beta /\sigma _u^2) \prod _{t = 2}^T\frac{1}{\sigma _u}\exp \left\{-\frac{1}{2\sigma _u^2}(x_t - x_{t-1})^2\right\} \nonumber \\
+&= \frac{\beta ^{\alpha}}{\Gamma (\alpha)}(1/\sigma _u^2)^{\alpha +1} \exp (-\beta /\sigma _u^2) \cdot (\sigma _u^2)^{-\frac{T-1}{2}}\exp \left\{-\frac{1}{2\sigma _u^2} \sum_{t=2}^{T}(x_t - x_{t-1})^2\right\} \nonumber \\
+&\propto (\sigma _u^2)^{-(\alpha + \frac{T-1}{2}+1)}\exp \left\{-\frac{1}{\sigma_u^2}\left(\beta + \frac{1}{2}\sum_{t = 2}^T(x_t - x_{t-1})^2\right)\right\}
+\end{align}
+which follows an inverse gamma distribution with parameters 
+\begin{equation*}
+\alpha ^* = \alpha +\frac{T-1}{2}\; \text{and} \; \beta ^* = \beta + \frac{1}{2}\sum_{t = 2}^T(x_t - x_{t-1})^2.
+\end{equation*}
+
+## d)
+
+In the Metropolis-Hastings algorithm, which we will implement, we need to find an expression for the acceptance probability $\alpha$, which in general is given as 
+\begin{equation*}
+\alpha (y|x) = \min \left\{1, \frac{\pi (y) Q(x|y)}{\pi (x)Q(y|x)}\right\}
+\end{equation*}
+where $Q(x|y)$ is a proposed conditional probability mass function (pmf), $\pi (x)$ is the probability of being in state $x$, and the transition probability is given as 
+\begin{equation*}
+p(y|x) = \begin{cases}
+Q(y|x)\alpha(y|x) & \text{for } y \neq x  \\
+1- \sum_{y \neq x}Q(y|x)\alpha (y|x) &\text{for } y = x \end{cases}
+\end{equation*}
+which is the probability of transitioning to state $y$ given that the current state is $x$. The expression for $\alpha$ can be derived from the detailed balance equation, $\pi (x) p(y|x) = \pi (y) p(x|y)$ which is true for a time reversible Markov chain. 
+
+We will now consider the conditional prior proposal distribution, $Q(\boldsymbol{x}_\mathcal{I}'|\boldsymbol{x}_{-\mathcal{I}},\sigma _u^2, \boldsymbol{y}) = p(\boldsymbol{x}_\mathcal{I}'|\boldsymbol{x}_{-\mathcal{I}},\sigma _u^2)$, where $\boldsymbol{x}_\mathcal{I}'$ is the proposed values for $\boldsymbol{x}_\mathcal{I}$, $\mathcal{I} \subseteq \{1,\ldots ,366\}$ is a set of time indices, and $\boldsymbol{x}_{-\mathcal{I}}= \boldsymbol{x}_{\{1,\ldots ,366\}\backslash \mathcal{I}}$ is a subset of $\boldsymbol{x}$ that includes all other indices than those in $\mathcal{I}$. Our expression for the acceptance probability is then 
+\begin{align*}
+\alpha (\boldsymbol{x}_\mathcal{I}'|\boldsymbol{x}_{-\mathcal{I}}, \sigma _u^2, \boldsymbol{y}) &= \min \left\{1, \frac{\pi(\boldsymbol{x}_\mathcal{I}'|\boldsymbol{x}_{-\mathcal{I}},\sigma _u^2, \boldsymbol{y})Q(\boldsymbol{x}_{\mathcal{I}}|\boldsymbol{x}_\mathcal{I}', \boldsymbol{x}_{-\mathcal{I}}, \sigma _u^2, \boldsymbol{y})}{\pi(\boldsymbol{x}_\mathcal{I}|\boldsymbol{x}_{-\mathcal{I}},\sigma _u^2, \boldsymbol{y})Q(\boldsymbol{x}_{\mathcal{I}}'|\boldsymbol{x}_\mathcal{I}, \boldsymbol{x}_{-\mathcal{I}}, \sigma _u^2, \boldsymbol{y})}\right\} \nonumber \\
+&= \min \left\{1, \frac{p(\boldsymbol{x}_\mathcal{I}'|\boldsymbol{x}_{-\mathcal{I}},\sigma _u^2, \boldsymbol{y})p(\boldsymbol{x}_{\mathcal{I}}|\boldsymbol{x}_{-\mathcal{I}}, \sigma _u^2)}{p(\boldsymbol{x}_\mathcal{I}|\boldsymbol{x}_{-\mathcal{I}},\sigma _u^2, \boldsymbol{y})p(\boldsymbol{x}_{\mathcal{I}}'|\boldsymbol{x}_{-\mathcal{I}}, \sigma _u^2)}\right\}. 
+\end{align*}
+We can simplify this expression by looking at $p(\boldsymbol{x}_\mathcal{I}|\boldsymbol{x}_{-\mathcal{I}},\sigma _u^2, \boldsymbol{y})$ and $p(\boldsymbol{x}_\mathcal{I}'|\boldsymbol{x}_{-\mathcal{I}},\sigma _u^2, \boldsymbol{y})$. From probability theory we know that $P(A |B) = \frac{P(A\cap B)}{P(B)}$, such that we can divide the expression of $p(\boldsymbol{x}_\mathcal{I}'|\boldsymbol{x}_{-\mathcal{I}},\sigma _u^2, \boldsymbol{y})$ as follows:
+\begin{align*}
+p(\boldsymbol{x}_\mathcal{I}'|\boldsymbol{x}_{-\mathcal{I}},\sigma _u^2, \boldsymbol{y}) &= \frac{p(\boldsymbol{x}_\mathcal{I}',\boldsymbol{y}|\boldsymbol{x}_{-\mathcal{I}},\sigma _u^2)}{p(\boldsymbol{y}|\boldsymbol{x}_{-\mathcal{I}},\sigma _u^2)} = \frac{p(\boldsymbol{y}|\boldsymbol{x}_\mathcal{I}',\boldsymbol{x}_{-\mathcal{I}},\sigma _u^2)\cdot p(\boldsymbol{x}_\mathcal{I}'|\boldsymbol{x}_{-\mathcal{I}}, \sigma _u^2)}{p(\boldsymbol{y}|\boldsymbol{x}_{-\mathcal{I}},\sigma _u^2)}\\
+&= \frac{p(\boldsymbol{y}_\mathcal{I}|\boldsymbol{x}_\mathcal{I}')\cdot p(\boldsymbol{y}_{-\mathcal{I}}|\boldsymbol{x}_{-\mathcal{I}})\cdot p(\boldsymbol{x}_\mathcal{I}'|\boldsymbol{x}_{-\mathcal{I}},\sigma _u^2)}{p(\boldsymbol{y}|\boldsymbol{x}_{-\mathcal{I}})}
+\end{align*}
+where we have used that $\boldsymbol{y}$ is independent of $\sigma _u^2$ and that $\boldsymbol{x}_\mathcal{I}$ and $\boldsymbol{x}_{-\mathcal{I}}$ are disjoint sets, and $y_t|x_t$ are conditionally independent. We perform a similar calculation for $p(\boldsymbol{x}_\mathcal{I}|\boldsymbol{x}_{-\mathcal{I}},\sigma _u^2, \boldsymbol{y})$ and obtain 
+\begin{equation*}
+p(\boldsymbol{x}_\mathcal{I}|\boldsymbol{x}_{-\mathcal{I}},\sigma _u^2, \boldsymbol{y}) = \frac{p(\boldsymbol{y}_\mathcal{I}|\boldsymbol{x}_\mathcal{I})\cdot p(\boldsymbol{y}_{-\mathcal{I}}|\boldsymbol{x}_{-\mathcal{I}})\cdot p(\boldsymbol{x}_\mathcal{I}|\boldsymbol{x}_{-\mathcal{I}},\sigma _u^2)}{p(\boldsymbol{y}|\boldsymbol{x}_{-\mathcal{I}})}.
+\end{equation*}
+We can then simplify $\alpha (\boldsymbol{x}_\mathcal{I}'|\boldsymbol{x}_{-\mathcal{I}}, \sigma _u^2, \boldsymbol{y})$, which becomes 
+\begin{equation}
+\alpha (\boldsymbol{x}_\mathcal{I}'|\boldsymbol{x}_{-\mathcal{I}}, \sigma _u^2, \boldsymbol{y}) = \min \left\{1, \frac{p(\boldsymbol{x}_\mathcal{I}'|\boldsymbol{x}_{-\mathcal{I}},\sigma _u^2, \boldsymbol{y})p(\boldsymbol{x}_{\mathcal{I}}|\boldsymbol{x}_{-\mathcal{I}}, \sigma _u^2)}{p(\boldsymbol{x}_\mathcal{I}|\boldsymbol{x}_{-\mathcal{I}},\sigma _u^2, \boldsymbol{y})p(\boldsymbol{x}_{\mathcal{I}}'|\boldsymbol{x}_{-\mathcal{I}}, \sigma _u^2)}\right\} = \min \left\{1, \frac{p(\boldsymbol{y}_\mathcal{I}|\boldsymbol{x}_\mathcal{I}')}{p(\boldsymbol{y}_\mathcal{I}|\boldsymbol{x}_\mathcal{I})}\right\}.
+\end{equation}
+We can then see that $\alpha (\boldsymbol{x}_\mathcal{I}'|\boldsymbol{x}_{-\mathcal{I}}, \sigma _u^2, \boldsymbol{y})$ becomes a ratio of likelihoods for the proposed values $\boldsymbol{x}_\mathcal{I}'$ against the existing values $\boldsymbol{x}_\mathcal{I}$.
+
+## e)
+
+We note that the density specified by \@ref(eq:x-likli) is improper, for example for $T = 2$, density takes the shape of an infinite 'Gaussian ridge' centered around the line given by $x_1 = x_2$. Equation \@ref(eq:x-likli) can be rewritten as 
+\begin{equation}
+p(\boldsymbol{x}|\sigma _u^2) \propto \exp \left\{-\frac{1}{2}\boldsymbol{x}^T\mathbf{Q}\boldsymbol{x}\right\}
+\end{equation}
+which resembles a multivariate normal density but where the improperiety of the density translates into the precision matrix 
+\begin{equation*}
+\mathbf{Q} = \frac{1}{\sigma _u^2}
+\begin{pmatrix}
+1 & -1 & & & \\
+-1 & 2 & -1 & & \\
+& & \ddots  & & \\
+& & -1 & 2 & -1 \\
+& & & -1 & 1
+\end{pmatrix},
+\end{equation*}
+having one zero eigenvalue. We partition the components of $\boldsymbol{x}$ into two subvectors writing 
+\begin{equation*}
+\boldsymbol{x} = \begin{pmatrix} \boldsymbol{x}_A \\ \boldsymbol{x}_B \end{pmatrix},
+\end{equation*}
+and partitioning the precision matrix in the same way as 
+\begin{equation*}
+\mathbf{Q}= \begin{pmatrix} \mathbf{Q}_{AA} & \mathbf{Q}_{AB} \\
+\mathbf{Q}_{BA} & \mathbf{Q}_{BB} \end{pmatrix}.
+\end{equation*}
+We then want to derive the conditional distribution of $\boldsymbol{x}_A$ conditional on $\boldsymbol{x}_B$. We know from before that the conditional density is always proportional to the joint (improper) density. We assume without loss of generality that $\boldsymbol{\mu} = \boldsymbol{0}$ and find that 
+\begin{align*}
+f_{\boldsymbol{x}_A|\boldsymbol{x}_B}(\boldsymbol{x}_A) &\propto \exp \left\{-\frac{1}{2}(\boldsymbol{x}_A^T,\boldsymbol{x}_B^T)\begin{bmatrix} \mathbf{Q}_{AA} & \mathbf{Q}_{AB} \\ \mathbf{Q}_{BA} & \mathbf{Q}_{BB} \end{bmatrix}  \begin{pmatrix} \boldsymbol{x}_A \\ \boldsymbol{x}_B \end{pmatrix}\right\} \\
+&= \exp \left\{-\frac{1}{2}(\boldsymbol{x}_A^T\mathbf{Q}_{AA}\boldsymbol{x}_A + \boldsymbol{x}_B^T\mathbf{Q}_{BA}\boldsymbol{x}_A + \boldsymbol{x}_A^T\mathbf{Q}_{AB}\boldsymbol{x}_B + \boldsymbol{x}_B^T\mathbf{Q}_{BB}\boldsymbol{x}_B)\right\} \\
+&\propto \exp \left\{-\frac{1}{2}(\boldsymbol{x}_A - \boldsymbol{\mu}_{A|B})^T\mathbf{Q}_{AA}(\boldsymbol{x}_B -\boldsymbol{\mu}_{A|B})\right\} \\
+&\propto \exp \left\{-\frac{1}{2}(\boldsymbol{x}_A^T\mathbf{Q}_{AA}\boldsymbol{x}_A - \boldsymbol{\mu}_{A|B}^T\mathbf{Q}_{AA}\boldsymbol{x}_A - \boldsymbol{x}_A^T\mathbf{Q}_{AA}\boldsymbol{\mu}_{A|B})\right\}
+\end{align*}
+where we only consider terms involving $\boldsymbol{x}_A$, which is random in this case, and we use the fact that we can write the terms involving $\boldsymbol{x}_A$ in the second line in quadratic form, completing the square. We then equate the coefficients in the last line to the terms in the second line to find our expressions for $\boldsymbol{\mu}_{A|B}$ and $\mathbf{Q}_{A|B}$. We have 
+\begin{align}
+-\mathbf{Q}_{AA}\boldsymbol{\mu}_{A|B} = \mathbf{Q}_{AB}\boldsymbol{x}_B \implies \boldsymbol{\mu}_{A|B} &= -\mathbf{Q}_{AA}^{-1}\mathbf{Q}_{AB}\boldsymbol{x}_B (\#eq:conditional-mean)\\ 
+\mathbf{Q}_{A|B} &= \mathbf{Q}_{AA} (\#eq:conditional-inverse-variance).
+\end{align}
+These results is used to simulate from $\boldsymbol{x}_\mathcal{I}'|\boldsymbol{x}_{-\mathcal{I}}$ later on when we generate realizations from the random walk. 
+
+## f)
+
+In this section we want to implement an MCMC sampler from the posterior distribution $p(\boldsymbol{\pi}, \sigma _u^2|\boldsymbol{y})$ using Metropolis-Hastings steps for individual $x_t$ parameters using the conditional prior, $p(x_t|\boldsymbol{x}_{-t}\sigma _u^2)$, and Gibbs steps for $\sigma _u^2$. 
+
+We will begin by deriving the conditional prior distribution using the results from Equations \@ref(eq:conditional-mean) and \@ref(eq:conditional-inverse-variance) as the conditional mean and precision (inverse variance) of $x_\mathcal{I}'|\boldsymbol{x}_{-\mathcal{I}}$. We need to derive the conditional prior distribution for three cases, $t = 1$, $2 \leq t \leq 365$ and $t = 366$. For the case $t = 1$, $\mathcal{I} = \{1\}$, we have for the conditional mean that $-\mathbf{Q}_{\mathcal{I}\mathcal{I}}^{-1} = -\sigma _u^2$, $\mathbf{Q}_{\mathcal{I}-\mathcal{I}} = \frac{1}{\sigma _u^2}(-1,0,\dots,0)$ with dimension $1\times (T-1)$. Thus the conditional expectation is given as 
+\begin{equation}
+x_\mathcal{I}|\boldsymbol{x}_{-\mathcal{I}} = -\mathbf{Q}_{\mathcal{I}\mathcal{I}}^{-1}\mathbf{Q}_{\mathcal{I}-\mathcal{I}}\boldsymbol{x}_{-\mathcal{I}} = -\sigma _u^2 \cdot \frac{1}{\sigma _u^2}(-1,0,\dots,0)(x_2, x_3, \ldots , x_T)^T = x_2.
+\end{equation}
+Similarly we have for $t = 366$, $\mathcal{I} = \{366\}$, we have 
+\begin{equation}
+x_\mathcal{I}|\boldsymbol{x}_{-\mathcal{I}} =  -\sigma _u^2 \cdot \frac{1}{\sigma _u^2}(0,\dots,0,-1)(x_1,\ldots ,x_{364}, x_{365})^T = x_{365}.
+\end{equation}
+Then finally for the interior points, $2 \leq t \leq 365$, $\mathcal{I} =  \{2\}, \{3\},\ldots, \{365\}$, we have $-\mathbf{Q}_{\mathcal{I}\mathcal{I}}^{-1} = -\frac{\sigma _u^2}{2}$ and $\mathbf{Q}_{\mathcal{I}-\mathcal{I}} = \frac{1}{\sigma _u^2}(0,\dots,0,-1,-1,0,\dots,0)$ with dimension $1\times (T-1)$. We then calculate the conditional expectation as 
+\begin{equation}
+x_\mathcal{I}|\boldsymbol{x}_{-\mathcal{I}} = -\frac{\sigma _u^2}{2} \cdot \frac{1}{\sigma _u^2}(0,\dots,0,-1,-1,0,\dots,0)(x_1,\ldots ,x_{t-1}, x_{t+1}, \ldots, x_{366})^T = \frac{1}{2}(x_{t-1}+x_{t+1}).
+\end{equation}
+We perform a similar calculation to calculate the conditional variance. We have that the conditional variance $\mathbf{\Sigma}_{\mathcal{I}|-\mathcal{I}} = \mathbf{Q}_{\mathcal{I}|-\mathcal{I}}^{-1}$. For $t = 1$ and $t = 366$ we have that $\mathbf{Q}_{\mathcal{I}\mathcal{I}}^{-1} = \sigma _u^2$ and for $2\leq t \leq 365$ we have $\mathbf{Q}_{\mathcal{I}\mathcal{I}}^{-1} = \frac{\sigma _u^2}{2}$. Thus we can summarize the conditional distribution of $x_\mathcal{I}|\boldsymbol{x}_{-\mathcal{I}}$ as 
+\begin{equation}
+x_\mathcal{I}|\boldsymbol{x}_{-\mathcal{I}} \sim \begin{cases}
+\mathcal{N}(x_2,\sigma _u^2) &\text{for} \; t = 1\\
+\mathcal{N}(\frac{1}{2}(x_{t-1}+x_{t+1}), \frac{\sigma _u^2}{2}) &\text{for} \; t = 2, \ldots ,365 \\
+\mathcal{N}(x_{365}, \sigma _u^2) &\text{for} \; t = 366. \end{cases}
+\end{equation}
+
+
