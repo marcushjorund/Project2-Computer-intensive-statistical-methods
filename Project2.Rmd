@@ -6,7 +6,6 @@ output:
   bookdown::pdf_document2: default
   bookdown::html_document2: default
 ---
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
@@ -121,6 +120,7 @@ p(\boldsymbol{x}_\mathcal{I}|\boldsymbol{x}_{-\mathcal{I}},\sigma _u^2, \boldsym
 We can then simplify $\alpha (\boldsymbol{x}_\mathcal{I}'|\boldsymbol{x}_{-\mathcal{I}}, \sigma _u^2, \boldsymbol{y})$, which becomes 
 \begin{equation}
 \alpha (\boldsymbol{x}_\mathcal{I}'|\boldsymbol{x}_{-\mathcal{I}}, \sigma _u^2, \boldsymbol{y}) = \min \left\{1, \frac{p(\boldsymbol{x}_\mathcal{I}'|\boldsymbol{x}_{-\mathcal{I}},\sigma _u^2, \boldsymbol{y})p(\boldsymbol{x}_{\mathcal{I}}|\boldsymbol{x}_{-\mathcal{I}}, \sigma _u^2)}{p(\boldsymbol{x}_\mathcal{I}|\boldsymbol{x}_{-\mathcal{I}},\sigma _u^2, \boldsymbol{y})p(\boldsymbol{x}_{\mathcal{I}}'|\boldsymbol{x}_{-\mathcal{I}}, \sigma _u^2)}\right\} = \min \left\{1, \frac{p(\boldsymbol{y}_\mathcal{I}|\boldsymbol{x}_\mathcal{I}')}{p(\boldsymbol{y}_\mathcal{I}|\boldsymbol{x}_\mathcal{I})}\right\}.
+(\#eq:alpha-acceptance-general)
 \end{equation}
 We can then see that $\alpha (\boldsymbol{x}_\mathcal{I}'|\boldsymbol{x}_{-\mathcal{I}}, \sigma _u^2, \boldsymbol{y})$ becomes a ratio of likelihoods for the proposed values $\boldsymbol{x}_\mathcal{I}'$ against the existing values $\boldsymbol{x}_\mathcal{I}$.
 
@@ -166,29 +166,223 @@ These results is used to simulate from $\boldsymbol{x}_\mathcal{I}'|\boldsymbol{
 
 ## f)
 
-In this section we want to implement an MCMC sampler from the posterior distribution $p(\boldsymbol{\pi}, \sigma _u^2|\boldsymbol{y})$ using Metropolis-Hastings steps for individual $x_t$ parameters using the conditional prior, $p(x_t|\boldsymbol{x}_{-t}\sigma _u^2)$, and Gibbs steps for $\sigma _u^2$. 
+In this section we want to implement an MCMC sampler from the posterior distribution $p(\boldsymbol{\pi}, \sigma _u^2|\boldsymbol{y})$ using Metropolis-Hastings steps for individual $x_t$ parameters using the conditional prior, $p(x_t|\boldsymbol{x}_{-t},\sigma _u^2)$, and Gibbs steps for $\sigma _u^2$. 
 
-We will begin by deriving the conditional prior distribution using the results from Equations \@ref(eq:conditional-mean) and \@ref(eq:conditional-inverse-variance) as the conditional mean and precision (inverse variance) of $x_\mathcal{I}'|\boldsymbol{x}_{-\mathcal{I}}$. We need to derive the conditional prior distribution for three cases, $t = 1$, $2 \leq t \leq 365$ and $t = 366$. For the case $t = 1$, $\mathcal{I} = \{1\}$, we have for the conditional mean that $-\mathbf{Q}_{\mathcal{I}\mathcal{I}}^{-1} = -\sigma _u^2$, $\mathbf{Q}_{\mathcal{I}-\mathcal{I}} = \frac{1}{\sigma _u^2}(-1,0,\dots,0)$ with dimension $1\times (T-1)$. Thus the conditional expectation is given as 
+We will begin by deriving the conditional prior distribution using the results from Equations \@ref(eq:conditional-mean) and \@ref(eq:conditional-inverse-variance) as the conditional mean and precision (inverse variance) of $x_\mathcal{I}'|\boldsymbol{x}_{-\mathcal{I}},\sigma _u^2$. We need to derive the conditional prior distribution for three cases, $t = 1$, $2 \leq t \leq 365$ and $t = 366$. For the case $t = 1$, $\mathcal{I} = \{1\}$, we have for the conditional mean that $-\mathbf{Q}_{\mathcal{I}\mathcal{I}}^{-1} = -\sigma _u^2$, $\mathbf{Q}_{\mathcal{I}-\mathcal{I}} = \frac{1}{\sigma _u^2}(-1,0,\dots,0)$ with dimension $1\times (T-1)$. Thus the conditional expectation is given as 
 \begin{equation}
-x_\mathcal{I}|\boldsymbol{x}_{-\mathcal{I}} = -\mathbf{Q}_{\mathcal{I}\mathcal{I}}^{-1}\mathbf{Q}_{\mathcal{I}-\mathcal{I}}\boldsymbol{x}_{-\mathcal{I}} = -\sigma _u^2 \cdot \frac{1}{\sigma _u^2}(-1,0,\dots,0)(x_2, x_3, \ldots , x_T)^T = x_2.
+x_\mathcal{I}|\boldsymbol{x}_{-\mathcal{I}},\sigma _u^2 = -\mathbf{Q}_{\mathcal{I}\mathcal{I}}^{-1}\mathbf{Q}_{\mathcal{I}-\mathcal{I}}\boldsymbol{x}_{-\mathcal{I}} = -\sigma _u^2 \cdot \frac{1}{\sigma _u^2}(-1,0,\dots,0)(x_2, x_3, \ldots , x_T)^T = x_2.
 \end{equation}
 Similarly we have for $t = 366$, $\mathcal{I} = \{366\}$, we have 
 \begin{equation}
-x_\mathcal{I}|\boldsymbol{x}_{-\mathcal{I}} =  -\sigma _u^2 \cdot \frac{1}{\sigma _u^2}(0,\dots,0,-1)(x_1,\ldots ,x_{364}, x_{365})^T = x_{365}.
+x_\mathcal{I}|\boldsymbol{x}_{-\mathcal{I}},\sigma _u^2 =  -\sigma _u^2 \cdot \frac{1}{\sigma _u^2}(0,\dots,0,-1)(x_1,\ldots ,x_{364}, x_{365})^T = x_{365}.
 \end{equation}
 Then finally for the interior points, $2 \leq t \leq 365$, $\mathcal{I} =  \{2\}, \{3\},\ldots, \{365\}$, we have $-\mathbf{Q}_{\mathcal{I}\mathcal{I}}^{-1} = -\frac{\sigma _u^2}{2}$ and $\mathbf{Q}_{\mathcal{I}-\mathcal{I}} = \frac{1}{\sigma _u^2}(0,\dots,0,-1,-1,0,\dots,0)$ with dimension $1\times (T-1)$. We then calculate the conditional expectation as 
 \begin{equation}
-x_\mathcal{I}|\boldsymbol{x}_{-\mathcal{I}} = -\frac{\sigma _u^2}{2} \cdot \frac{1}{\sigma _u^2}(0,\dots,0,-1,-1,0,\dots,0)(x_1,\ldots ,x_{t-1}, x_{t+1}, \ldots, x_{366})^T = \frac{1}{2}(x_{t-1}+x_{t+1}).
+x_\mathcal{I}|\boldsymbol{x}_{-\mathcal{I}},\sigma _u^2 = -\frac{\sigma _u^2}{2} \cdot \frac{1}{\sigma _u^2}(0,\dots,0,-1,-1,0,\dots,0)(x_1,\ldots ,x_{t-1}, x_{t+1}, \ldots, x_{366})^T = \frac{1}{2}(x_{t-1}+x_{t+1}).
 \end{equation}
-We perform a similar calculation to calculate the conditional variance. We have that the conditional variance $\mathbf{\Sigma}_{\mathcal{I}|-\mathcal{I}} = \mathbf{Q}_{\mathcal{I}|-\mathcal{I}}^{-1}$. For $t = 1$ and $t = 366$ we have that $\mathbf{Q}_{\mathcal{I}\mathcal{I}}^{-1} = \sigma _u^2$ and for $2\leq t \leq 365$ we have $\mathbf{Q}_{\mathcal{I}\mathcal{I}}^{-1} = \frac{\sigma _u^2}{2}$. Thus we can summarize the conditional distribution of $x_\mathcal{I}|\boldsymbol{x}_{-\mathcal{I}}$ as 
+We perform a similar calculation to calculate the conditional variance. We have that the conditional variance $\mathbf{\Sigma}_{\mathcal{I}|-\mathcal{I},\sigma _u^2} = \mathbf{Q}_{\mathcal{I}|-\mathcal{I},\sigma _u^2}^{-1}$. For $t = 1$ and $t = 366$ we have that $\mathbf{Q}_{\mathcal{I}\mathcal{I}}^{-1} = \sigma _u^2$ and for $2\leq t \leq 365$ we have $\mathbf{Q}_{\mathcal{I}\mathcal{I}}^{-1} = \frac{\sigma _u^2}{2}$. Thus we can summarize the conditional distribution of $x_\mathcal{I}|\boldsymbol{x}_{-\mathcal{I}}$ as 
 \begin{equation}
-x_\mathcal{I}|\boldsymbol{x}_{-\mathcal{I}} \sim \begin{cases}
+x_\mathcal{I}|\boldsymbol{x}_{-\mathcal{I}},\sigma _u^2 \sim \begin{cases}
 \mathcal{N}(x_2,\sigma _u^2) &\text{for} \; t = 1\\
 \mathcal{N}(\frac{1}{2}(x_{t-1}+x_{t+1}), \frac{\sigma _u^2}{2}) &\text{for} \; t = 2, \ldots ,365 \\
 \mathcal{N}(x_{365}, \sigma _u^2) &\text{for} \; t = 366. \end{cases}
 \end{equation}
 
-This is the distribution we simulate from on the random walk to generate realizations of $x_t'$, which is the proposed value for $x$ at index $t$. 
+This is the distribution we simulate from on the random walk to generate realizations of $x_t'$, which is the proposed value for $x$ at index $t$. Next we will derive the expression for the acceptance probability $\alpha (x_t'|\boldsymbol{x}_{-t},\sigma _u^2, \boldsymbol{y})$ for $\mathcal{I}  = \{t\}$. We use the expression for the acceptance probability derived in Equation \@ref(eq:alpha-acceptance-general). We have 
+\begin{align*}
+\alpha (x_t'|\boldsymbol{x}_{-t},\sigma _u^2, \boldsymbol{y}) &= \min \left\{1, \frac{p(y_t|x_t')}{p(y_t|x_t)}\right\} = \min \left\{1,\frac{{n_t \choose y_t} \frac{\exp (x_t' y_t)}{(1 + \exp (x_t'))^{n_t}}}{{n_t \choose y_t} \frac{\exp (x_t y_t)}{(1 + \exp (x_t))^{n_t}}}\right\} \\
+&= \min \left\{1, \exp \left(y_t(x_t'-x_t)\cdot \frac{(1+\exp (x_t))^{n_t}}{(1+\exp (x_t'))^{n_t}}\right)\right\}\\ 
+&= \min \left\{1, \exp \left(y_t(x_t'-x_t)- n_t \text{ln}\left(\frac{1+\exp (x_t')}{1+\exp (x_t)}\right)\right)\right\}
+\end{align*}
+
+In the algorithm, we will for each $t \in \{1,\ldots, 366\}$, use the Metropolis-Hastings algorithm, using the following algorithm, 
+
+**Hybrid sampler Metropolis-Hastings**:
+
+Initialize $x = x_0$ and $\sigma _u^2 \sim p(\sigma _u^2)$
+
+repeat $n$ times:
+
+$\qquad$ for $t = 1, \ldots ,366$:
+
+$\qquad \qquad$ generate $x_t'\sim p(\sigma _u^2|\boldsymbol{x}_{-t})$
+
+$\qquad \qquad$ $\alpha \leftarrow \min \left\{1, \exp \left(y_t(x_t'-x_t)- n_t \text{ln}\left(\frac{1+\exp (x_t')}{1+\exp (x_t)}\right)\right)\right\}$
+
+$\qquad \qquad$ generate $u \sim \text{unif}(0,1)$
+
+$\qquad \qquad$ if $(u < \alpha)$:
+
+$\qquad \qquad \qquad$ $x_t \leftarrow x_t'$
+
+$\qquad \qquad$ else
+
+$\qquad \qquad \qquad$ $x_t \leftarrow x_t$ 
+
+$\qquad$ end for
+
+$\qquad$ $\beta ^* = \beta  + \frac{1}{2}\sum_{t = 2}^T(x_t-x_{t-1})^2$
+
+$\qquad$ generate $\sigma _u^2 \sim \text{InvGamma}(\alpha + \frac{T-1}{2}, \beta ^*)$
+
+end for
+
+Return samples $x_{1},...,x_{T}$
+
+```{r}
+# Problem 1
+library(matrixStats)
+library(MASS)
+
+expit <- function(x){
+  return(exp(x)/(1 + exp(x)))
+}
+
+# f)
+
+# Defining global variables
+alpha = 2
+beta = 0.05
+N = 50000
+
+alpha_prob <- function(x_prop, x, t){
+  # Calculates acceptance probability
+  y = rain$n.rain[t]
+  n = rain$n.years[t]
+  ans = exp(y*(x_prop - x) - n * log((1+exp(x_prop))/(1+exp(x))))
+  return(min(1,ans))
+}
+
+MH_step <- function(x, sigma2, accept_count, mu, t){
+  # Calculates one step of Metropolis-Hastings
+  # All inputs are numbers
+  x_prop <- rnorm(1, mu, sqrt(sigma2))
+
+  # Probability of acceptance
+  alpha_accept <- alpha_prob(x_prop, x, t)
+  u <- runif(1)
+  
+  if (alpha_accept > u){
+    x <- x_prop
+    accept_count = accept_count + 1
+  }
+  return(list(x = x, accept_count = accept_count))
+  
+}
+
+moments_prop <- function(x,t,sigma2, T_max = 366){
+  # Returns mu proposed as defined in the text
+  # Input x is (1xT_max), t is a number
+  if (t == 1){
+    return(list(mu= x[2],sigma2 = sigma2 ))
+  } 
+  else if (t == T_max) {
+    return(list(mu = x[T_max-1], sigma2 = sigma2))
+  } 
+  else{
+    return(list(mu = 0.5*(x[t-1] + x[t+1]), sigma2 = sigma2/2))
+  }
+}
+
+MCMC <- function(n = N, T_max = 366){
+  # Time start
+  time = proc.time()[3]
+  # Initialization
+  accept_count = 0
+  x <- rep(1,T_max*n)
+  x <- matrix(x, nrow = n, ncol = T_max)
+  sigma2 <- rep(1,n)
+  sigma2[1] <- rgamma(1, alpha, scale = beta)^-1
+  for (i in 2:n){
+    # One iteration of MCMC:
+    old_sigma2 = sigma2[i-1]
+    for (t in 1:T_max){
+      param = moments_prop(x[i-1,],t,old_sigma2, T_max = T_max)
+      mu_temp = param$mu
+      sigma2_temp = param$sigma2
+      MH_step_t <- MH_step(x[i-1,t], sigma2_temp, accept_count, mu_temp, t)
+      x[i,t] <- MH_step_t$x
+      accept_count <- MH_step_t$accept_count
+    }
+    
+    # Gibbs step, updating sigma2
+    z = beta + 0.5*sum((x[i,-T_max] - x[i, -1])^2)
+    sigma2[i] <- 1/rgamma(1,alpha + (T_max-1)/2, scale = z)
+  }
+  accept_rate = accept_count/ (n * T_max)
+  total_time = proc.time()[3] - time
+  
+  return(list(x = x, total_time = total_time, accept_rate = accept_rate, sigma2 = sigma2))
+}
+
+MCMC_run <- MCMC()
+
+MCMC_run$total_time
+MCMC_run$accept_rate
+```
+
+```{r}
+burnin <- ceiling(N/10)
+interval <- burnin:N
+x_vec = seq(1,N)
+
+plot(x_vec, expit(MCMC_run$x[,1]), ylim = c(0,1), ylab = "y", xlab = "x", type = "l")
+plot(x_vec, expit(MCMC_run$x[,201]), ylim = c(0,1), ylab = "y", xlab = "x", type = "l")
+plot(x_vec, expit(MCMC_run$x[,366]), ylim = c(0,1), ylab = "y", xlab = "x", type = "l")
+plot(x_vec, MCMC_run$sigma2, ylim = c(0,0.01), ylab = "y", xlab = "x", type = "l")
+
+# Plotting histograms
+# General histogram function
+plot_hist <- function(x, xlab = "x", ylab = "Density", breaks = 50, xlim = c(0,1), alpha = 0.05){
+  # Plots general histogram with quantiles and mean
+  quantiles <- quantile(x, probs = c(alpha/2, 1 - alpha/2))
+  hist(x, breaks = breaks, xlab = xlab, ylab = ylab, xlim = xlim, main = NULL)
+  abline(v = quantiles[1], col = "blue")
+  abline(v = quantiles[2], col = "blue")
+  abline(v = mean(x), col = "red")
+  legend("right",legend = c("CI", "Mean", "Samples"), col = c("blue", "red", "grey"), lty = 1)
+}
+```
+
+
+```{r}
+# Plots
+xlab1 = expression(paste(pi, "(x"[1],")"))
+xlab2 = expression(paste(pi, "(x"[201],")"))
+xlab3 = expression(paste(pi, "(x"[366],")"))
+xlab4 = expression(paste(sigma[u]^2))
+par(mfrow = c(2, 2), mar = c(5,4,4,2))
+hist(expit(MCMC_run$x[,1])[interval], breaks = 50, xlab = xlab1,ylab = "Density", xlim = c(0,0.5), main = NULL)
+hist(expit(MCMC_run$x[,1])[interval], breaks = 50, xlab = xlab2,ylab = "Density", xlim = c(0,0.5), main = NULL)
+hist(expit(MCMC_run$x[,1])[interval], breaks = 50, xlab = xlab3,ylab = "Density", xlim = c(0,0.5), main = NULL)
+plot_hist(MCMC_run$sigma2[interval],xlim = c(0,0.006), xlab = xlab4)
+par(mfrow = c(1, 1))
+
+
+# AVFs:
+par(mfrow = c(2, 2), mar = c(5,4,4,2))
+acf(expit(MCMC_run$x[,1])[interval], main = xlab1)
+acf(expit(MCMC_run$x[,201])[interval], main = xlab2)
+acf(expit(MCMC_run$x[,366])[interval], main = xlab3)
+acf(MCMC_run$sigma2[interval], main = xlab4)
+par(mfrow = c(1, 1), mar = c(5,5,1,1))
+```
+
+```{r}
+mean_x = colMeans(MCMC_run$x[interval,])
+pi_data = rain$n.rain/rain$n.years
+
+
+x_quantiles <- colQuantiles(MCMC_run$x[interval,], probs = c(0.025, 0.975))
+par(mfrow = c(1, 1))
+plot(1:366,pi_data, type = "l",xlab = "Day", ylab = expression(paste(pi, "(x)")))
+lines(expit(mean_x), type = "l", col = "red")
+lines(expit(x_quantiles[,1]), type = "l", col = "blue")
+lines(expit(x_quantiles[,2]), type = "l", col = "blue")
+legend("topright",legend = c("CI", "Empirical mean", "Data"), col = c("blue", "red", "grey"), lty = 1)
+```
+
+
 
 # Problem 2
 
@@ -196,9 +390,29 @@ This is the distribution we simulate from on the random walk to generate realiza
 head(rain_data)
 #install.packages("INLA", repos = c(getOption("repos"), INLA ="https://inla.r-inla-download.org/R/stable"), dep=TRUE)
 library("INLA")
+t <- proc.time()[3]
 control.inla = list(strategy="simplified.laplace", int.strategy="ccd")
 mod <- inla(n.rain ~ -1 + f(day, model="rw1", constr=FALSE),
 data=rain, Ntrials=n.years, control.compute=list(config = TRUE),
 family="binomial", verbose=TRUE, control.inla=control.inla)
+run_time <- proc.time()[3]-t
+run_time
+INLA_fit <- mod$summary.fitted.values$mean
+lower <- mod$summary.fitted.values$`0.025quant`
+upper <- mod$summary.fitted.values$`0.975quant`
+plot(seq(1,366, by = 1), INLA_fit,type = "l", col = "yellow")
+lines(expit(mean_x), type = "l", col = "red")
+
+plot(seq(1,366, by = 1), lower, type = "l", col  = "orange")
+lines(seq(1,366, by = 1), upper, type = "l", col  ="orange")
+lines(expit(x_quantiles[,1]), type = "l", col = "blue")
+lines(expit(x_quantiles[,2]), type = "l", col = "blue")
+
+```
+```{r}
+?control.fixed 
+?f
+inla.doc("rw1")
+inla.doc("X")
 ```
 
